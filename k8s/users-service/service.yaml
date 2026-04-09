@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-service
+  namespace: observashop
+  labels:
+    app: users-service
+spec:
+  type: ClusterIP
+  selector:
+    app: users-service
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
