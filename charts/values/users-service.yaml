@@ -3,4 +3,34 @@ fullnameOverride: users-service
 
 image:
   repository: localhost:5001/observashop/users-service
-  tag: "0.1.0"
+  tag: "0.2.0"
+
+# Give the pod a bit more time to start because it waits for Postgres
+probes:
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+extraEnv:
+  - name: PGHOST
+    value: postgres-postgresql.observashop.svc.cluster.local
+  - name: PGPORT
+    value: "5432"
+  - name: PGUSER
+    value: observashop
+  - name: PGDATABASE
+    value: users
+  - name: PGPASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: postgres-postgresql
+        key: password
