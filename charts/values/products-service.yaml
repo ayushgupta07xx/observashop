@@ -1,0 +1,6 @@
+nameOverride: products-service
+fullnameOverride: products-service
+
+image:
+  repository: localhost:5001/observashop/products-service
+  tag: "0.1.0"

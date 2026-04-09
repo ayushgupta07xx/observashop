@@ -1,0 +1,45 @@
+replicaCount: 2
+
+image:
+  repository: localhost:5001/observashop/placeholder
+  tag: ""
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+logLevel: info
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+securityContext:
+  runAsUser: 1000
+
+terminationGracePeriodSeconds: 30
+
+nameOverride: ""
+fullnameOverride: ""
+podAnnotations: {}
+extraEnv: []

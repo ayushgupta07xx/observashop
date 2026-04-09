@@ -1,0 +1,6 @@
+nameOverride: users-service
+fullnameOverride: users-service
+
+image:
+  repository: localhost:5001/observashop/users-service
+  tag: "0.1.0"

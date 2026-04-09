@@ -1,0 +1,9 @@
+apiVersion: v2
+name: microservice
+description: Reusable Helm chart for ObservaShop microservices
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+maintainers:
+  - name: Ayush Gupta
+    url: https://github.com/ayushgupta07xx
