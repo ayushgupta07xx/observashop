@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - '.github/workflows/ci.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/**'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  # ---------------------------------------------------------------
+  # Detect which services changed so we only build what we need.
+  # On a 3-service repo this is overkill; on a 30-service repo
+  # it's the difference between a 2-minute build and a 30-minute build.
+  # ---------------------------------------------------------------
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      users: ${{ steps.filter.outputs.users }}
+      products: ${{ steps.filter.outputs.products }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            users:
+              - 'services/users-service/**'
+            products:
+              - 'services/products-service/**'
+
+  # ---------------------------------------------------------------
+  # Reusable build job — runs once per changed service via matrix.
+  # ---------------------------------------------------------------
+  build:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write   # required for Trivy SARIF upload
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: users-service
+            changed: ${{ needs.detect-changes.outputs.users }}
+          - service: products-service
+            changed: ${{ needs.detect-changes.outputs.products }}
+    steps:
+      - name: Skip if service unchanged
+        if: matrix.changed != 'true'
+        run: |
+          echo "${{ matrix.service }} unchanged, skipping"
+          exit 0
+
+      - name: Checkout
+        if: matrix.changed == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: matrix.changed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/${{ matrix.service }}/package-lock.json
+
+      - name: Install dependencies
+        if: matrix.changed == 'true'
+        working-directory: services/${{ matrix.service }}
+        run: npm ci
+
+      - name: TypeScript build (lint check via tsc)
+        if: matrix.changed == 'true'
+        working-directory: services/${{ matrix.service }}
+        run: npm run build
+
+      - name: Set up Docker Buildx
+        if: matrix.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: matrix.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        if: matrix.changed == 'true'
+        id: tag
+        run: |
+          # Use short commit SHA as the image tag — immutable, traceable, no collisions
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=${SHA}" >> $GITHUB_OUTPUT
+          echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/observashop/${{ matrix.service }}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image (for scanning, no push yet)
+        if: matrix.changed == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          load: true
+          tags: ${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy vulnerability scan
+        if: matrix.changed == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}
+          format: table
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+
+      - name: Trivy SARIF report (for GitHub Security tab)
+        if: matrix.changed == 'true' && always()
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          ignore-unfixed: true
+
+      - name: Upload Trivy results to GitHub Security
+        if: matrix.changed == 'true' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-${{ matrix.service }}
+
+      - name: Push image to GHCR
+        if: matrix.changed == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}
+            ${{ steps.tag.outputs.image }}:latest
+          cache-from: type=gha
