@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # ---------- Stage 1: build ----------
-FROM node:20-alpine AS builder
+FROM node:20.18-alpine3.20 AS builder
 WORKDIR /app
 
 # Copy manifests first so dependency install is cached separately from source changes
@@ -17,7 +17,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ---------- Stage 2: runtime ----------
-FROM node:20-alpine AS runtime
+FROM node:20.18-alpine3.20 AS runtime
 WORKDIR /app
 
 # Run as a non-root user (the node:alpine image ships with a 'node' user, uid 1000)
