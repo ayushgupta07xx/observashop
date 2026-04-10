@@ -29,6 +29,15 @@ pool.on('error', (err) => {
   logger.error({ err }, 'unexpected postgres pool error');
 });
 
+// ---------- Chaos state ----------
+// Runtime-configurable fault injection. Set via POST /chaos/error-rate
+// In production this would be gated behind auth and a feature flag, but
+// for this demo we expose it directly so we can test alerting.
+const chaos = {
+  errorRate: 0,      // 0.0 to 1.0 — probability of returning 500
+  latencyMs: 0,      // extra artificial latency added to every response
+};
+
 // ---------- Prometheus metrics ----------
 const register = new client.Registry();
 register.setDefaultLabels({ service: SERVICE_NAME });
@@ -57,6 +66,12 @@ const dbQueryDuration = new client.Histogram({
   registers: [register],
 });
 
+const chaosGauge = new client.Gauge({
+  name: 'chaos_error_rate',
+  help: 'Current chaos fault injection error rate (0.0 to 1.0)',
+  registers: [register],
+});
+
 // ---------- Middleware ----------
 app.use(express.json());
 app.use(pinoHttp({ logger }));
@@ -77,6 +92,19 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Chaos injection middleware — runs before business logic routes
+// but after health/metrics routes (those are defined first below)
+const chaosMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  if (chaos.latencyMs > 0) {
+    await new Promise((r) => setTimeout(r, chaos.latencyMs));
+  }
+  if (chaos.errorRate > 0 && Math.random() < chaos.errorRate) {
+    logger.warn({ route: req.path }, 'chaos injection: returning 500');
+    return res.status(500).json({ error: 'chaos injected failure' });
+  }
+  next();
+};
+
 // ---------- Helper: timed query ----------
 async function timedQuery<T extends Record<string, any>>(
   operation: string,
@@ -93,7 +121,7 @@ async function timedQuery<T extends Record<string, any>>(
   }
 }
 
-// ---------- Database initialization with retry ----------
+// ---------- Database initialization ----------
 async function initDb(maxAttempts = 15): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -105,7 +133,6 @@ async function initDb(maxAttempts = 15): Promise<void> {
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
-
       const { rows } = await pool.query('SELECT COUNT(*)::int AS count FROM users');
       if (rows[0].count === 0) {
         await pool.query(`
@@ -125,14 +152,11 @@ async function initDb(maxAttempts = 15): Promise<void> {
   throw new Error(`database initialization failed after ${maxAttempts} attempts`);
 }
 
-// ---------- Routes ----------
-
-// Liveness: is the process alive? Don't touch the DB — we don't want a DB hiccup to kill pods.
+// ---------- Routes: health and metrics (not subject to chaos) ----------
 app.get('/healthz', (_req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', service: SERVICE_NAME });
 });
 
-// Readiness: can this pod serve traffic RIGHT NOW? Check the DB.
 app.get('/readyz', async (_req: Request, res: Response) => {
   try {
     await pool.query('SELECT 1');
@@ -147,6 +171,36 @@ app.get('/metrics', async (_req: Request, res: Response) => {
   res.end(await register.metrics());
 });
 
+// ---------- Routes: chaos control (not subject to chaos itself) ----------
+app.get('/chaos', (_req: Request, res: Response) => {
+  res.json({ chaos });
+});
+
+app.post('/chaos/error-rate', (req: Request, res: Response) => {
+  const rate = parseFloat(req.body?.rate);
+  if (Number.isNaN(rate) || rate < 0 || rate > 1) {
+    return res.status(400).json({ error: 'rate must be a number between 0 and 1' });
+  }
+  chaos.errorRate = rate;
+  chaosGauge.set(rate);
+  logger.warn({ rate }, 'chaos error rate updated');
+  return res.json({ chaos });
+});
+
+app.post('/chaos/latency', (req: Request, res: Response) => {
+  const ms = parseInt(req.body?.ms, 10);
+  if (Number.isNaN(ms) || ms < 0 || ms > 10000) {
+    return res.status(400).json({ error: 'ms must be an integer between 0 and 10000' });
+  }
+  chaos.latencyMs = ms;
+  logger.warn({ ms }, 'chaos latency updated');
+  return res.json({ chaos });
+});
+
+// ---------- Apply chaos middleware to business routes only ----------
+app.use(chaosMiddleware);
+
+// ---------- Routes: business logic ----------
 app.get('/users', async (_req: Request, res: Response) => {
   try {
     const rows = await timedQuery<any>(
@@ -203,8 +257,12 @@ app.post('/users', async (req: Request, res: Response) => {
 app.get('/', (_req: Request, res: Response) => {
   res.json({
     service: SERVICE_NAME,
-    version: '0.2.0',
-    endpoints: ['/healthz', '/readyz', '/metrics', '/users', '/users/:id'],
+    version: '0.3.0',
+    endpoints: [
+      '/healthz', '/readyz', '/metrics',
+      '/chaos', '/chaos/error-rate', '/chaos/latency',
+      '/users', '/users/:id',
+    ],
   });
 });
 
