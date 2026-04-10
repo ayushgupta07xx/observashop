@@ -1,0 +1,181 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orders-service-slo
+  namespace: monitoring
+  labels:
+    release: kps
+    app.kubernetes.io/part-of: observashop
+spec:
+  groups:
+    # -----------------------------------------------------------------
+    # Recording rules: SLI numerators and denominators
+    # -----------------------------------------------------------------
+    - name: orders-service.slo.recording
+      interval: 30s
+      rules:
+        # ---- Inbound request rate ----
+        - record: sli:orders_service:requests:rate5m
+          expr: sum(rate(http_requests_total{service="orders-service"}[5m]))
+        - record: sli:orders_service:requests:rate30m
+          expr: sum(rate(http_requests_total{service="orders-service"}[30m]))
+        - record: sli:orders_service:requests:rate1h
+          expr: sum(rate(http_requests_total{service="orders-service"}[1h]))
+        - record: sli:orders_service:requests:rate6h
+          expr: sum(rate(http_requests_total{service="orders-service"}[6h]))
+
+        # ---- Inbound errors (5xx) ----
+        - record: sli:orders_service:errors:rate5m
+          expr: sum(rate(http_requests_total{service="orders-service",status_code=~"5.."}[5m]))
+        - record: sli:orders_service:errors:rate30m
+          expr: sum(rate(http_requests_total{service="orders-service",status_code=~"5.."}[30m]))
+        - record: sli:orders_service:errors:rate1h
+          expr: sum(rate(http_requests_total{service="orders-service",status_code=~"5.."}[1h]))
+        - record: sli:orders_service:errors:rate6h
+          expr: sum(rate(http_requests_total{service="orders-service",status_code=~"5.."}[6h]))
+
+        # ---- Inbound error ratio (the SLI for availability) ----
+        - record: sli:orders_service:error_ratio:rate5m
+          expr: |
+            (sli:orders_service:errors:rate5m / sli:orders_service:requests:rate5m)
+            or vector(0)
+        - record: sli:orders_service:error_ratio:rate30m
+          expr: |
+            (sli:orders_service:errors:rate30m / sli:orders_service:requests:rate30m)
+            or vector(0)
+        - record: sli:orders_service:error_ratio:rate1h
+          expr: |
+            (sli:orders_service:errors:rate1h / sli:orders_service:requests:rate1h)
+            or vector(0)
+        - record: sli:orders_service:error_ratio:rate6h
+          expr: |
+            (sli:orders_service:errors:rate6h / sli:orders_service:requests:rate6h)
+            or vector(0)
+
+        # ---- Latency SLI: fraction of requests slower than 500ms ----
+        # Higher than users-service (250ms) because orders does fan-out to 2 upstreams
+        - record: sli:orders_service:latency_good:rate5m
+          expr: sum(rate(http_request_duration_seconds_bucket{service="orders-service",le="0.5"}[5m]))
+        - record: sli:orders_service:latency_good:rate1h
+          expr: sum(rate(http_request_duration_seconds_bucket{service="orders-service",le="0.5"}[1h]))
+        - record: sli:orders_service:latency_bad_ratio:rate5m
+          expr: |
+            (1 - (sli:orders_service:latency_good:rate5m / sli:orders_service:requests:rate5m))
+            or vector(0)
+        - record: sli:orders_service:latency_bad_ratio:rate1h
+          expr: |
+            (1 - (sli:orders_service:latency_good:rate1h / sli:orders_service:requests:rate1h))
+            or vector(0)
+
+        # ---- Upstream dependency SLI: fraction of outbound calls that failed ----
+        # This is the new metric specific to orders-service. If users-service or
+        # products-service is degraded, this fires before our own error rate does.
+        - record: sli:orders_service:upstream_calls:rate5m
+          expr: sum by (target_service) (rate(http_client_requests_total{service="orders-service"}[5m]))
+        - record: sli:orders_service:upstream_errors:rate5m
+          expr: |
+            sum by (target_service) (
+              rate(http_client_requests_total{service="orders-service",status_code=~"5..|error"}[5m])
+            )
+        - record: sli:orders_service:upstream_error_ratio:rate5m
+          expr: |
+            (sli:orders_service:upstream_errors:rate5m / sli:orders_service:upstream_calls:rate5m)
+            or vector(0)
+
+    # -----------------------------------------------------------------
+    # SLO targets
+    # -----------------------------------------------------------------
+    - name: orders-service.slo.metadata
+      interval: 1m
+      rules:
+        - record: slo:orders_service:availability_target
+          expr: vector(0.999)
+          labels:
+            service: orders-service
+            slo: availability
+        - record: slo:orders_service:latency_target
+          expr: vector(0.999)
+          labels:
+            service: orders-service
+            slo: latency_p999_under_500ms
+
+    # -----------------------------------------------------------------
+    # Multi-window multi-burn-rate alerts (Google SRE book pattern)
+    # -----------------------------------------------------------------
+    - name: orders-service.slo.alerts
+      interval: 30s
+      rules:
+        # ---- Availability ----
+        - alert: OrdersServiceErrorBudgetFastBurn
+          expr: |
+            sli:orders_service:error_ratio:rate5m > (14.4 * 0.001)
+            and
+            sli:orders_service:error_ratio:rate1h > (14.4 * 0.001)
+          for: 2m
+          labels:
+            severity: critical
+            slo: orders_service_availability
+            burn_rate: fast
+          annotations:
+            summary: "orders-service burning error budget FAST (2% of 30d budget in 1h)"
+            description: |
+              5m error ratio: {{ $value | humanizePercentage }}
+              At this rate the 30-day error budget will be exhausted in ~2 hours.
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/orders-service-errors.md
+
+        - alert: OrdersServiceErrorBudgetSlowBurn
+          expr: |
+            sli:orders_service:error_ratio:rate30m > (6 * 0.001)
+            and
+            sli:orders_service:error_ratio:rate6h > (6 * 0.001)
+          for: 15m
+          labels:
+            severity: warning
+            slo: orders_service_availability
+            burn_rate: slow
+          annotations:
+            summary: "orders-service slowly burning error budget"
+            description: |
+              30m error ratio: {{ $value | humanizePercentage }}
+
+        # ---- Latency ----
+        - alert: OrdersServiceLatencySLOFastBurn
+          expr: |
+            sli:orders_service:latency_bad_ratio:rate5m > (14.4 * 0.001)
+            and
+            sli:orders_service:latency_bad_ratio:rate1h > (14.4 * 0.001)
+          for: 2m
+          labels:
+            severity: critical
+            slo: orders_service_latency
+            burn_rate: fast
+          annotations:
+            summary: "orders-service latency SLO burning FAST (too many requests > 500ms)"
+
+        # ---- Health ----
+        - alert: OrdersServicePodNotReady
+          expr: |
+            sum(up{namespace="observashop", pod=~"orders-service.*"}) < 2
+          for: 2m
+          labels:
+            severity: critical
+            slo: orders_service_availability
+          annotations:
+            summary: "orders-service has fewer than 2 healthy pods"
+
+        # ---- Upstream dependency degradation ----
+        # Fires when our outbound calls to users-service or products-service
+        # are failing more than 5% of the time. This is the early-warning signal
+        # before our own error budget starts burning.
+        - alert: OrdersServiceUpstreamDegraded
+          expr: |
+            sli:orders_service:upstream_error_ratio:rate5m > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            slo: orders_service_dependencies
+          annotations:
+            summary: "orders-service upstream dependency degraded ({{ $labels.target_service }})"
+            description: |
+              {{ $labels.target_service }} returning errors at {{ $value | humanizePercentage }}.
+              orders-service availability is at risk. Investigate upstream first.
