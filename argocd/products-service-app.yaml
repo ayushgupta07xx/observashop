@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: products-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ayushgupta07xx/observashop
+    targetRevision: main
+    path: charts/microservice
+    helm:
+      releaseName: products-service
+      valueFiles:
+        - ../values/products-service.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observashop
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
