@@ -19,3 +19,13 @@ CVE-2026-33671
 # Risk: Low — code path is not reachable from application code.
 # Review: 2026-05-10
 CVE-2026-22184
+
+# CVE-2026-28390 - OpenSSL DoS via NULL pointer dereference in CMS
+# Package: libcrypto3, libssl3 (alpine OS layer)
+# Severity: HIGH
+# Justification: Awaiting upstream alpine package update. Service does not parse
+#                arbitrary CMS messages from untrusted input. TLS termination
+#                happens at the ingress, not in this service.
+# Risk: Low — code path requires malicious CMS payload which is not exposed.
+# Review: 2026-05-10
+CVE-2026-28390

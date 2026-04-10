@@ -128,7 +128,7 @@ jobs:
           vuln-type: 'os,library'
 
       - name: Trivy SARIF report (for GitHub Security tab)
-        if: matrix.changed == 'true' && always()
+        if: matrix.changed == 'true' && success()
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}
@@ -139,7 +139,7 @@ jobs:
           trivyignores: services/${{ matrix.service }}/.trivyignore
 
       - name: Upload Trivy results to GitHub Security
-        if: matrix.changed == 'true' && always()
+        if: matrix.changed == 'true' && success()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
