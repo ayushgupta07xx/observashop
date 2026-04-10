@@ -4,6 +4,7 @@ fullnameOverride: users-service
 image:
   repository: localhost:5001/observashop/users-service
   tag: "0.3.0"
+replicaCount: 3
 
 # Give the pod a bit more time to start because it waits for Postgres
 probes:
