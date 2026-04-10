@@ -1,0 +1,169 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: users-service-slo
+  namespace: monitoring
+  labels:
+    release: kps
+    app.kubernetes.io/part-of: observashop
+spec:
+  groups:
+    # -----------------------------------------------------------------
+    # Recording rules: pre-compute SLI numerators and denominators
+    # over multiple windows. These run every 30s and are what the
+    # alerts query, instead of reevaluating raw histograms each time.
+    # -----------------------------------------------------------------
+    - name: users-service.slo.recording
+      interval: 30s
+      rules:
+        # Total requests (denominator for availability SLI)
+        - record: sli:users_service:requests:rate5m
+          expr: sum(rate(http_requests_total{service="users-service"}[5m]))
+        - record: sli:users_service:requests:rate30m
+          expr: sum(rate(http_requests_total{service="users-service"}[30m]))
+        - record: sli:users_service:requests:rate1h
+          expr: sum(rate(http_requests_total{service="users-service"}[1h]))
+        - record: sli:users_service:requests:rate6h
+          expr: sum(rate(http_requests_total{service="users-service"}[6h]))
+
+        # Error requests (5xx) — numerator for "bad events"
+        - record: sli:users_service:errors:rate5m
+          expr: sum(rate(http_requests_total{service="users-service",status_code=~"5.."}[5m]))
+        - record: sli:users_service:errors:rate30m
+          expr: sum(rate(http_requests_total{service="users-service",status_code=~"5.."}[30m]))
+        - record: sli:users_service:errors:rate1h
+          expr: sum(rate(http_requests_total{service="users-service",status_code=~"5.."}[1h]))
+        - record: sli:users_service:errors:rate6h
+          expr: sum(rate(http_requests_total{service="users-service",status_code=~"5.."}[6h]))
+
+        # Error ratio (bad / total) — the actual SLI
+        # Clamped to avoid NaN when there's no traffic
+        - record: sli:users_service:error_ratio:rate5m
+          expr: |
+            (sli:users_service:errors:rate5m / sli:users_service:requests:rate5m)
+            or vector(0)
+        - record: sli:users_service:error_ratio:rate30m
+          expr: |
+            (sli:users_service:errors:rate30m / sli:users_service:requests:rate30m)
+            or vector(0)
+        - record: sli:users_service:error_ratio:rate1h
+          expr: |
+            (sli:users_service:errors:rate1h / sli:users_service:requests:rate1h)
+            or vector(0)
+        - record: sli:users_service:error_ratio:rate6h
+          expr: |
+            (sli:users_service:errors:rate6h / sli:users_service:requests:rate6h)
+            or vector(0)
+
+        # Latency SLI: fraction of requests slower than 250ms
+        # 'good' events = requests that completed within 250ms
+        - record: sli:users_service:latency_good:rate5m
+          expr: sum(rate(http_request_duration_seconds_bucket{service="users-service",le="0.25"}[5m]))
+        - record: sli:users_service:latency_good:rate1h
+          expr: sum(rate(http_request_duration_seconds_bucket{service="users-service",le="0.25"}[1h]))
+        - record: sli:users_service:latency_bad_ratio:rate5m
+          expr: |
+            (1 - (sli:users_service:latency_good:rate5m / sli:users_service:requests:rate5m))
+            or vector(0)
+        - record: sli:users_service:latency_bad_ratio:rate1h
+          expr: |
+            (1 - (sli:users_service:latency_good:rate1h / sli:users_service:requests:rate1h))
+            or vector(0)
+
+    # -----------------------------------------------------------------
+    # SLO metadata as a constant — makes dashboards self-documenting
+    # -----------------------------------------------------------------
+    - name: users-service.slo.metadata
+      interval: 1m
+      rules:
+        - record: slo:users_service:availability_target
+          expr: vector(0.999)
+          labels:
+            service: users-service
+            slo: availability
+        - record: slo:users_service:latency_target
+          expr: vector(0.999)
+          labels:
+            service: users-service
+            slo: latency_p999_under_250ms
+
+    # -----------------------------------------------------------------
+    # Alerting rules — multi-window, multi-burn-rate (Google SRE book)
+    #
+    # With a 99.9% SLO we have a 0.1% error budget.
+    # "Burn rate" = how fast we're consuming the budget relative to 30d.
+    # Burn rate 14.4 = budget exhausted in 2 hours  → page (fast burn)
+    # Burn rate  6   = budget exhausted in 5 hours  → page
+    # Burn rate  3   = budget exhausted in 10 hours → ticket (slow burn)
+    # Burn rate  1   = exactly matching the budget  → informational
+    #
+    # Two windows per alert: the short window confirms the burn is
+    # happening right now, the long window prevents flapping.
+    # -----------------------------------------------------------------
+    - name: users-service.slo.alerts
+      interval: 30s
+      rules:
+        # ---- Availability ----
+        - alert: UsersServiceErrorBudgetFastBurn
+          expr: |
+            sli:users_service:error_ratio:rate5m > (14.4 * 0.001)
+            and
+            sli:users_service:error_ratio:rate1h > (14.4 * 0.001)
+          for: 2m
+          labels:
+            severity: critical
+            slo: users_service_availability
+            burn_rate: fast
+          annotations:
+            summary: "users-service burning error budget FAST (2% of 30d budget in 1h)"
+            description: |
+              5m error ratio: {{ $value | humanizePercentage }}
+              At this rate the 30-day error budget will be exhausted in ~2 hours.
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/users-service-errors.md
+
+        - alert: UsersServiceErrorBudgetSlowBurn
+          expr: |
+            sli:users_service:error_ratio:rate30m > (6 * 0.001)
+            and
+            sli:users_service:error_ratio:rate6h > (6 * 0.001)
+          for: 15m
+          labels:
+            severity: warning
+            slo: users_service_availability
+            burn_rate: slow
+          annotations:
+            summary: "users-service slowly burning error budget (5% of 30d budget in 6h)"
+            description: |
+              30m error ratio: {{ $value | humanizePercentage }}
+              At this rate the 30-day error budget will be exhausted in ~5 hours.
+
+        # ---- Latency ----
+        - alert: UsersServiceLatencySLOFastBurn
+          expr: |
+            sli:users_service:latency_bad_ratio:rate5m > (14.4 * 0.001)
+            and
+            sli:users_service:latency_bad_ratio:rate1h > (14.4 * 0.001)
+          for: 2m
+          labels:
+            severity: critical
+            slo: users_service_latency
+            burn_rate: fast
+          annotations:
+            summary: "users-service latency SLO burning FAST (too many requests > 250ms)"
+            description: |
+              Fraction of requests slower than 250ms (5m): {{ $value | humanizePercentage }}
+              This is violating the p99.9 < 250ms SLO at a fast burn rate.
+
+        # ---- Health ----
+        - alert: UsersServicePodNotReady
+          expr: |
+            sum(up{namespace="observashop", pod=~"users-service.*"}) < 2
+          for: 2m
+          labels:
+            severity: critical
+            slo: users_service_availability
+          annotations:
+            summary: "users-service has fewer than 2 healthy pods"
+            description: |
+              High availability is compromised. Current healthy pods: {{ $value }}
+              Expected: 2. Investigate pod crashes or scheduling issues immediately.
