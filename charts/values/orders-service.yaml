@@ -1,0 +1,39 @@
+nameOverride: orders-service
+fullnameOverride: orders-service
+
+image:
+  repository: localhost:5001/observashop/orders-service
+  tag: "0.1.0"
+
+probes:
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 6
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+extraEnv:
+  - name: PGHOST
+    value: postgres-postgresql.observashop.svc.cluster.local
+  - name: PGPORT
+    value: "5432"
+  - name: PGUSER
+    value: observashop
+  - name: PGDATABASE
+    value: orders
+  - name: PGPASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: postgres-postgresql
+        key: password
+  - name: USERS_SERVICE_URL
+    value: http://users-service.observashop.svc.cluster.local
+  - name: PRODUCTS_SERVICE_URL
+    value: http://products-service.observashop.svc.cluster.local

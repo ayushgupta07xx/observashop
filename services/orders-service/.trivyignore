@@ -1,0 +1,31 @@
+# Documented CVE exceptions for users-service
+# Each entry MUST include: CVE ID, package, severity, justification, review date
+#
+# CVE-2026-33671 - picomatch ReDoS
+# Package: picomatch (transitive via nodemon -> chokidar -> anymatch/readdirp)
+# Severity: HIGH
+# Justification: nodemon is a devDependency only, not present in production runtime image.
+#                The vulnerable picomatch is only used at dev-time for file watching.
+#                Production image is built with --omit=dev so this dep isn't shipped.
+# Risk: None — code path is not reachable in deployed image.
+# Review: 2026-07-10
+CVE-2026-33671
+
+# CVE-2026-22184 - zlib arbitrary code execution via untgz utility
+# Package: zlib (alpine OS layer, included in node:22-alpine base image)
+# Severity: CRITICAL
+# Justification: Vulnerability is in untgz utility which is not invoked at runtime.
+#                Service does not extract tar/gzip archives. Awaiting upstream alpine fix.
+# Risk: Low — code path is not reachable from application code.
+# Review: 2026-05-10
+CVE-2026-22184
+
+# CVE-2026-28390 - OpenSSL DoS via NULL pointer dereference in CMS
+# Package: libcrypto3, libssl3 (alpine OS layer)
+# Severity: HIGH
+# Justification: Awaiting upstream alpine package update. Service does not parse
+#                arbitrary CMS messages from untrusted input. TLS termination
+#                happens at the ingress, not in this service.
+# Risk: Low — code path requires malicious CMS payload which is not exposed.
+# Review: 2026-05-10
+CVE-2026-28390
