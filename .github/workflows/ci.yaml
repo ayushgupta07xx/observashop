@@ -124,6 +124,7 @@ jobs:
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
+          trivyignores: services/${{ matrix.service }}/.trivyignore
           vuln-type: 'os,library'
 
       - name: Trivy SARIF report (for GitHub Security tab)
@@ -135,6 +136,7 @@ jobs:
           output: trivy-results.sarif
           severity: 'CRITICAL,HIGH,MEDIUM'
           ignore-unfixed: true
+          trivyignores: services/${{ matrix.service }}/.trivyignore
 
       - name: Upload Trivy results to GitHub Security
         if: matrix.changed == 'true' && always()
