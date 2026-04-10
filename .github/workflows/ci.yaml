@@ -16,16 +16,12 @@ env:
   IMAGE_OWNER: ${{ github.repository_owner }}
 
 jobs:
-  # ---------------------------------------------------------------
-  # Detect which services changed so we only build what we need.
-  # On a 3-service repo this is overkill; on a 30-service repo
-  # it's the difference between a 2-minute build and a 30-minute build.
-  # ---------------------------------------------------------------
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       users: ${{ steps.filter.outputs.users }}
       products: ${{ steps.filter.outputs.products }}
+      orders: ${{ steps.filter.outputs.orders }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -36,17 +32,16 @@ jobs:
               - 'services/users-service/**'
             products:
               - 'services/products-service/**'
+            orders:
+              - 'services/orders-service/**'
 
-  # ---------------------------------------------------------------
-  # Reusable build job — runs once per changed service via matrix.
-  # ---------------------------------------------------------------
   build:
     needs: detect-changes
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      security-events: write   # required for Trivy SARIF upload
+      security-events: write
     strategy:
       fail-fast: false
       matrix:
@@ -55,6 +50,8 @@ jobs:
             changed: ${{ needs.detect-changes.outputs.users }}
           - service: products-service
             changed: ${{ needs.detect-changes.outputs.products }}
+          - service: orders-service
+            changed: ${{ needs.detect-changes.outputs.orders }}
     steps:
       - name: Skip if service unchanged
         if: matrix.changed != 'true'
@@ -79,7 +76,7 @@ jobs:
         working-directory: services/${{ matrix.service }}
         run: npm ci
 
-      - name: TypeScript build (lint check via tsc)
+      - name: TypeScript build
         if: matrix.changed == 'true'
         working-directory: services/${{ matrix.service }}
         run: npm run build
@@ -100,7 +97,6 @@ jobs:
         if: matrix.changed == 'true'
         id: tag
         run: |
-          # Use short commit SHA as the image tag — immutable, traceable, no collisions
           SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "tag=${SHA}" >> $GITHUB_OUTPUT
           echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/observashop/${{ matrix.service }}" >> $GITHUB_OUTPUT
@@ -127,8 +123,8 @@ jobs:
           trivyignores: services/${{ matrix.service }}/.trivyignore
           vuln-type: 'os,library'
 
-      - name: Trivy SARIF report (for GitHub Security tab)
-        if: matrix.changed == 'true' && success()
+      - name: Trivy SARIF report
+        if: matrix.changed == 'true' && always()
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.tag.outputs.image }}:${{ steps.tag.outputs.tag }}
@@ -139,7 +135,7 @@ jobs:
           trivyignores: services/${{ matrix.service }}/.trivyignore
 
       - name: Upload Trivy results to GitHub Security
-        if: matrix.changed == 'true' && success()
+        if: matrix.changed == 'true' && always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
