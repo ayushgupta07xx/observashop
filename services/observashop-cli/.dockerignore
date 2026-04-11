@@ -1,0 +1,12 @@
+bin/
+*.test
+*.out
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.md
+Dockerfile
+.dockerignore
+.trivyignore

@@ -1,0 +1,11 @@
+# observashop-cli accepted-risk CVEs
+#
+# Format per entry:
+#   CVE-YYYY-NNNNN
+#   package: <name>
+#   severity: <CRITICAL|HIGH>
+#   justification: <reachability + why ignore>
+#   risk: <low|medium|high>
+#   review: <YYYY-MM-DD>
+#
+# (empty - runtime is distroless static; only Go module CVEs apply)
