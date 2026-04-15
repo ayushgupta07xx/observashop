@@ -51,7 +51,7 @@ resource "google_container_cluster" "this" {
   # are short-lived. Real workload disks are configured on the primary
   # node pool below.
   node_config {
-    disk_size_gb = 10
+    disk_size_gb = 20
     disk_type    = "pd-standard"
   }
 
