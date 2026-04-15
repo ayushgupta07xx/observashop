@@ -45,6 +45,16 @@ resource "google_container_cluster" "this" {
   remove_default_node_pool = true
   initial_node_count       = 1
 
+  # Bootstrap default-pool gets minimal pd-standard disks to avoid hitting
+  # SSD quota on free-trial accounts. Pool is deleted immediately after
+  # cluster creation (remove_default_node_pool = true), so these disks
+  # are short-lived. Real workload disks are configured on the primary
+  # node pool below.
+  node_config {
+    disk_size_gb = 20
+    disk_type    = "pd-standard"
+  }
+
   # VPC-native networking (modern default, required for many features)
   ip_allocation_policy {
     cluster_secondary_range_name  = var.pods_range_name
