@@ -1,0 +1,25 @@
+# Terraform working files
+.terraform/
+
+# Plan artifacts
+tfplan
+*.tfplan
+
+# State files (we use remote state, but defensive)
+*.tfstate
+*.tfstate.*
+
+# Variable files often contain secrets — ignore by default,
+# explicitly allow only the dev tfvars which holds public project ID
+*.tfvars
+!environments/dev/terraform.tfvars
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
