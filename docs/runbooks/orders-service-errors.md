@@ -46,7 +46,7 @@ If either upstream returns an error or times out, the root cause is likely there
 orders-service itself has no chaos endpoint, but users-service does. If someone injected errors on users-service, orders-service will fail on every request that calls users-service. Run in your terminal:
 
 ```
-kubectl exec -n observashop deploy/users-service -- wget -qO- http://localhost:3000/chaos/status
+kubectl exec -n observashop deploy/users-service -- wget -qO- http://localhost:3000/chaos/error-rate
 ```
 
 If error-rate injection is non-zero, disable it:

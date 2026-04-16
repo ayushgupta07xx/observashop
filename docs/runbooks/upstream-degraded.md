@@ -46,7 +46,7 @@ If the health check fails or pods are unhealthy, the problem is in the upstream 
 users-service has chaos endpoints that can cause it to return errors. Run:
 
 ```
-kubectl exec -n observashop deploy/users-service -- wget -qO- http://localhost:3000/chaos/status
+kubectl exec -n observashop deploy/users-service -- wget -qO- http://localhost:3000/chaos/error-rate
 ```
 
 If error-rate or latency injection is active, disable it:

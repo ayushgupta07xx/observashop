@@ -33,7 +33,7 @@ If pods show `CrashLoopBackOff` or `Error`, skip to **Diagnostic paths → Pod c
 This is the most common cause in dev environments. Run in your terminal:
 
 ```
-kubectl exec -n observashop deploy/users-service -- wget -qO- http://localhost:3000/chaos/status
+kubectl exec -n observashop deploy/users-service -- wget -qO- http://localhost:3000/chaos/error-rate
 ```
 
 This hits the chaos endpoint inside users-service and prints the current injected error rate. If the output shows a non-zero error rate (e.g. `{"errorRate":1}`), that means someone left fault injection on. Disable it by running in your terminal:
