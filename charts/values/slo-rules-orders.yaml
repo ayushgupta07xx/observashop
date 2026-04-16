@@ -137,6 +137,7 @@ spec:
             summary: "orders-service slowly burning error budget"
             description: |
               30m error ratio: {{ $value | humanizePercentage }}
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/orders-service-errors.md
 
         # ---- Latency ----
         - alert: OrdersServiceLatencySLOFastBurn
@@ -151,6 +152,8 @@ spec:
             burn_rate: fast
           annotations:
             summary: "orders-service latency SLO burning FAST (too many requests > 500ms)"
+            description: |
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/latency-slo-burn.md
 
         # ---- Health ----
         - alert: OrdersServicePodNotReady
@@ -162,6 +165,8 @@ spec:
             slo: orders_service_availability
           annotations:
             summary: "orders-service has fewer than 2 healthy pods"
+            description: |
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/pod-not-ready.md
 
         # ---- Upstream dependency degradation ----
         # Fires when our outbound calls to users-service or products-service
@@ -179,3 +184,4 @@ spec:
             description: |
               {{ $labels.target_service }} returning errors at {{ $value | humanizePercentage }}.
               orders-service availability is at risk. Investigate upstream first.
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/upstream-degraded.md

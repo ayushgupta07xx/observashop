@@ -136,6 +136,7 @@ spec:
             description: |
               30m error ratio: {{ $value | humanizePercentage }}
               At this rate the 30-day error budget will be exhausted in ~5 hours.
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/users-service-errors.md
 
         # ---- Latency ----
         - alert: UsersServiceLatencySLOFastBurn
@@ -153,6 +154,7 @@ spec:
             description: |
               Fraction of requests slower than 250ms (5m): {{ $value | humanizePercentage }}
               This is violating the p99.9 < 250ms SLO at a fast burn rate.
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/latency-slo-burn.md
 
         # ---- Health ----
         - alert: UsersServicePodNotReady
@@ -167,3 +169,4 @@ spec:
             description: |
               High availability is compromised. Current healthy pods: {{ $value }}
               Expected: 2. Investigate pod crashes or scheduling issues immediately.
+              Runbook: https://github.com/ayushgupta07xx/observashop/blob/main/docs/runbooks/pod-not-ready.md
