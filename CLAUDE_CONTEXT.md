@@ -45,6 +45,7 @@ This was established at the end of Day 7 and is now standard for the rest of the
   + `day-7-complete` — Day 7 fully complete, CLI containerized and in CI
   + `day-8-complete` — Day 8 fully complete, Terraform plan succeeding
   + `day-9-complete` — Day 9 fully complete, GKE deployment recorded and destroyed
+  + `day-10-complete` — Day 10 fully complete, postmortem, runbooks, architecture diagram, alert annotations
 * **Rollback options if a future day breaks something:** (1) `git revert <bad-commit>` for surgical undo, (2) `git checkout day-N-complete` to inspect a past state read-only, (3) `git checkout -b restart-from-day-N day-N-complete` to branch off a known-good point and try again, (4) `git reset --hard day-N-complete && git push --force-with-lease` as a nuclear last resort.
 * **A new chat continuing the project should always start with:** confirm we're on main, working tree clean, last tag is `day-N-complete`, ready to start Day N+1.
 
@@ -52,7 +53,7 @@ This was established at the end of Day 7 and is now standard for the rest of the
 
 ## Current state
 
-### What's done (Days 1-9 complete as of this document)
+### What's done (Days 1-10 complete as of this document)
 
 1. **Day 1:** WSL2 Ubuntu, Docker Desktop, kubectl, kind, Helm, Terraform, Git, GitHub repo created with first commit.
 2. **Day 2:** users-service written in TypeScript with `/healthz`, `/readyz`, `/metrics`, pg-less CRUD; multi-stage hardened Dockerfile; 3-node kind cluster running; deployed via raw manifests.
@@ -63,12 +64,12 @@ This was established at the end of Day 7 and is now standard for the rest of the
 7. **Day 7:** `observashop-cli` Go binary built with cobra + client-go. Four subcommands: `health` (pings /healthz on all services in parallel with latency reporting), `chaos` (wraps users-service chaos endpoints), `pods` (client-go List), `slo-status` (queries Prometheus /api/v1/alerts for alerts with an `slo` label). Auto-detects in-cluster vs local kubeconfig. Containerized with multi-stage Dockerfile (`golang:1.25-alpine` → distroless static nonroot, ~12 MB). Real CVE remediation: Trivy initially flagged 8 CVEs (1 CRITICAL, 7 HIGH) in Go stdlib and `golang.org/x/oauth2`; bumped Go toolchain version (1.23.4 → 1.25-alpine) and oauth2 (0.21.0 → 0.27+), all 8 cleared. Added to CI matrix with `language: node|go` field gating Node-specific steps. Image published to `ghcr.io/ayushgupta07xx/observashop/observashop-cli`. In-cluster code path verified by running the CLI as a one-shot pod via `kubectl run`.
 8. **Day 8:** GCP account created, billing linked (₹1000 refundable deposit, $300 trial credit active). Project `observashop-dev-202604` in `us-central1`. gcloud CLI installed and authenticated in WSL (both user and ADC). Six required APIs enabled. GCS state bucket `observashop-dev-202604-tfstate` created with versioning + uniform bucket-level access. Terraform module structure built: reusable `vpc` and `gke` modules under `terraform/modules/`, dev composition under `terraform/environments/dev`. GKE cluster spec is regional (HA across 3 zones), separate managed node pool, dedicated least-privilege service account, Workload Identity, shielded nodes, Calico network policy, REGULAR release channel. `terraform plan` succeeds: 9 resources to add. No `terraform apply` yet — that's Day 9.
 9. **Day 9:** Real GKE cluster spun up via `terraform apply`, ObservaShop deployed end-to-end, demo video recorded, then `terraform destroy`. Total spend: ~$0.65 USD on the trial credit. Hit four real gotchas worth documenting: (a) GKE's bootstrap default-pool used 3×100GB pd-balanced disks during cluster creation even with `remove_default_node_pool=true`, blowing the non-adjustable 250GB SSD quota on free trial accounts — fix was adding a top-level `node_config { disk_size_gb=20, disk_type="pd-standard" }` block to override the bootstrap pool's disk; (b) Bitnami's Helm chart v18+ pulls itself as an OCI artifact from Docker Hub, which triggers Docker Desktop's Windows credential helper from inside WSL and fails with `exec format error` — fix was setting `DOCKER_CONFIG=/tmp/empty-docker-config` to skip the broken helper; (c) 3×e2-medium (≈3 vCPU usable) is too small for kube-prometheus-stack + 3 services; resized node pool to 6 nodes mid-deployment via `gcloud container clusters resize --num-nodes 2` (per-zone × 3 zones); (d) GCP zonal capacity churn caused one node to repair-loop continuously throughout the demo (`compute.instances.repair.recreateInstance` operations every ~10 min, "instance should be RUNNING, but it doesn't exist") — cosmetic, didn't block the demo, documented as known limitation. Six screenshots captured: GKE console (5 nodes healthy), kubectl get nodes, Grafana users-service dashboard with live traffic, SLO dashboard healthy state, SLO dashboard burning at 81% availability / 187x burn rate, Prometheus alert UsersServiceErrorBudgetFastBurn FIRING. 2-minute demo video recorded with OBS. After destroy, 4 orphan PVC disks remained (Kubernetes-created, outside Terraform state) — cleaned up manually with `gcloud compute disks delete`. Final state: zero GCP resources, zero billing, all work on `feat/gke-deployment` branch.
+10. **Day 10:** Documentation day. `docs/postmortem.md` — full incident write-up of the Day 4 chaos test (`UsersServiceErrorBudgetFastBurn` injection, Inactive → Pending → Firing in ~12 min) with IST timestamps, root cause analysis, detection matrix, what went well/poorly, action items, plus Day 9 GKE gotchas as a secondary lessons-learned section. 5 runbooks in `docs/runbooks/` covering all 9 alerts: `users-service-errors.md`, `orders-service-errors.md`, `latency-slo-burn.md`, `pod-not-ready.md`, `upstream-degraded.md`. `docs/architecture.md` with Mermaid flowchart (GitHub renders natively) showing kind/GKE deployment paths, service dependencies, observability fan-in, ArgoCD GitOps loop, CI/CD pipeline. All 9 PrometheusRule alerts updated with `Runbook:` annotation links pointing at the runbook files. 4 atomic commits on `feat/docs-day10` branch, PR #4 merged to main.
 
 ### What's next
 
 | Day | Work | Notes |
 | --- | --- | --- |
-| Day 10 | Postmortem doc (`docs/postmortem.md`) for the chaos test with timeline and root cause analysis. 3-5 runbooks in `docs/runbooks/` (referenced by alert annotations but don't exist yet). Architecture diagram in `docs/architecture.md` (Mermaid). |  |
 | Day 11 | Polish top-level README for recruiter-readability. Embed dashboard/alert/GKE screenshots. Add `bootstrap.sh` one-command recreate script. Add "Lessons learned" section from the gotchas below. Optional: add `terraform fmt -check` and `terraform validate` as CI gates. |  |
 | Day 12 | Draft Resume A (Infra/Reliability) targeting DevOps + SRE jobs. Update LinkedIn project section. Write 2-3 paragraph project description for cover letters. |  |
 
@@ -133,15 +134,24 @@ This was established at the end of Day 7 and is now standard for the rest of the
 │           ├── backend.tf             # GCS backend pointing at observashop-dev-202604-tfstate
 │           ├── versions.tf            # pins Terraform >= 1.9.0, google ~> 6.0
 │           └── .terraform.lock.hcl    # committed for reproducibility
+├── docs/
+│   ├── postmortem.md                  # Day 4 chaos test incident write-up
+│   ├── architecture.md                # Mermaid system architecture diagram
+│   └── runbooks/
+│       ├── users-service-errors.md
+│       ├── orders-service-errors.md
+│       ├── latency-slo-burn.md
+│       ├── pod-not-ready.md
+│       └── upstream-degraded.md
 │
 └── infra/
     ├── kind/cluster.yaml              # 3-node kind config
-    └── scripts/setup-local-registry.sh # needs containerd config_path append (see gotcha #3)
+    └── scripts/setup-local-registry.sh
+    
 ```
 
 ### Files notably absent (will be added later)
 
-* `docs/runbooks/`, `docs/postmortem.md`, `docs/architecture.md` (Day 10)
 * `bootstrap.sh` one-command environment recreate script (Day 11)
 
 ---
@@ -298,4 +308,4 @@ If a Claude in any chat starts confidently inventing things — naming files tha
 
 ---
 
-*End of brief. Day 9 is complete and tagged. Next action: Day 10 — postmortem doc, runbooks (referenced by alert annotations), and architecture diagram. All in `docs/`. No cloud, no cluster work.*
+*End of brief. Day 10 is complete and tagged. Next action: Day 11 — polish top-level README for recruiter-readability, embed screenshots, add bootstrap.sh one-command recreate script, add "Lessons learned" section. Optional: terraform fmt/validate CI gates. No cloud, no cluster work.*
