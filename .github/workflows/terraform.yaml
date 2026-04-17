@@ -1,0 +1,43 @@
+name: Terraform
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yaml'
+
+jobs:
+  validate:
+    name: fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: terraform fmt (check)
+        run: terraform fmt -check -recursive terraform/
+
+      - name: Init and validate — vpc module
+        run: |
+          terraform -chdir=terraform/modules/vpc init -backend=false -input=false
+          terraform -chdir=terraform/modules/vpc validate
+
+      - name: Init and validate — gke module
+        run: |
+          terraform -chdir=terraform/modules/gke init -backend=false -input=false
+          terraform -chdir=terraform/modules/gke validate
+
+      - name: Init and validate — dev environment
+        run: |
+          terraform -chdir=terraform/environments/dev init -backend=false -input=false
+          terraform -chdir=terraform/environments/dev validate
