@@ -226,7 +226,7 @@ Five things that bit me, and what I took from each.
 | 9 | `terraform apply` to real GKE · full stack deployed via the same Helm charts · demo video recorded · `terraform destroy` · $0 within GCP free tier |
 | 10 | Postmortem doc · 5 runbooks · architecture diagram · alerts updated with `runbook_url` annotations |
 | 11 | This README · `bootstrap.sh` one-command recreate · Terraform CI gates (`fmt -check`, `validate`) |
-| 12 | Resume targeting DevOps + SRE roles |
+| 12 | Minor Documentation |
 
 ---
 
@@ -256,7 +256,7 @@ observashop/
 
 ## Author
 
-**Ayush Gupta** — Computer Science undergrad (May 2026 graduate), targeting DevOps / SRE / backend engineering roles.
+**Ayush Gupta** — Computer Science undergrad (May 2026 graduate).
 
 [LinkedIn](https://linkedin.com/in/ayush-gupta-544a803a2) · [GitHub](https://github.com/ayushgupta07xx)
 
